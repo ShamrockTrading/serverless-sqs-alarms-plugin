@@ -33,15 +33,15 @@ Configure alarms in `serverless.yml`:
 ```yaml
 custom:
   sqs-alarms:
-    - queue: your-sqs-queue-name
-      topic: your-sns-topic-name
-      name: your-alarm-name # optional parameter
-      thresholds:
-        - 1
-        - 50
-        - 100
-        - 500
-      treatMissingData: string | array[] # optional parameter
+  - queue: your-sqs-queue-name
+    topic: your-sns-topic-name
+    name: your-alarm-name # optional parameter
+    metricName: ApproximateAgeOfOldestMessage
+    thresholds:
+    - value: 37
+      evaluationPeriods: 29
+      description: Alarm when some message in the queue is old, perhaps our workers aren't processing messages appropriately.
+    treatMissingData: string | array[] # optional parameter
 ```
 
 > The `treatMissingData` setting can be a string which is applied to all alarms, or an array to configure alarms individually. Valid types are `ignore, missing, breaching, notBreaching`, [more details in the AWS docs …](http://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/AlarmThatSendsEmail.html#alarms-and-missing-data)
@@ -56,19 +56,17 @@ The created CloudWatch Alarms look like this:
 {
   "Type": "AWS::CloudWatch::Alarm",
   "Properties": {
-    "AlarmDescription": "Alarm if queue contains more than 100 messages",
+    "AlarmDescription": "Alarm when some message in the queue is old, perhaps our workers aren't processing messages appropriately.",
     "Namespace": "AWS/SQS",
-    "MetricName": "ApproximateNumberOfMessagesVisible",
-    "Dimensions": [
-      {
-        "Name": "QueueName",
-        "Value": "your-sqs-queue-name"
-      }
-    ],
+    "MetricName": "ApproximateAgeOfOldestMessage",
+    "Dimensions": [{
+      "Name": "QueueName",
+      "Value": "your-sqs-queue-name"
+    }],
     "Statistic": "Sum",
     "Period": 60,
-    "EvaluationPeriods": 1,
-    "Threshold": 100,
+    "EvaluationPeriods": 29,
+    "Threshold": 37,
     "ComparisonOperator": "GreaterThanOrEqualToThreshold",
     "AlarmActions": [
       { "Fn::Join": [ "", [ "arn:aws:sns:eu-west-1:", { "Ref": "AWS::AccountId" }, ":your-sns-topic-name" ] ] }
