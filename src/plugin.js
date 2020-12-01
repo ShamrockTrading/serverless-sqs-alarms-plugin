@@ -1,61 +1,69 @@
-'use strict'
+'use strict';
 
-const _ = require('lodash')
-const util = require('util')
+const _ = require('lodash');
+const util = require('util');
 
 class Alarm {
-  constructor (alarm, region) {
-    this.queue = alarm.queue
-    this.topic = alarm.topic
-    this.region = region
-    this.thresholds = alarm.thresholds
-    this.name = alarm.name
-    this.treatMissingData = alarm.treatMissingData
+  constructor(alarm, region) {
+    this.queue = alarm.queue;
+    this.topic = alarm.topic;
+    this.metricName = alarm.metricName;
+    this.region = region;
+    this.thresholds = alarm.thresholds;
+    this.name = alarm.name;
+    this.treatMissingData = alarm.treatMissingData;
   }
 
-  formatAlarmName (value) {
+  formatAlarmName(value) {
     // Cloud Watch alarms must be alphanumeric only
-    let queue = this.queue.replace(/[^0-9a-z]/gi, '')
-    return util.format(queue + 'MessageAlarm%s', value)
+    const queue = this.queue.replace(/[^0-9a-z]/gi, '');
+    return util.format(queue + 'MessageAlarm%s', value);
   }
 
-  resolveTreatMissingData (index) {
+  resolveTreatMissingData(index) {
     if (this.treatMissingData.constructor === Array) {
-      return this.validateTreatMissingData(this.treatMissingData[index])
+      return this.validateTreatMissingData(this.treatMissingData[index]);
     } else {
-      return this.validateTreatMissingData(this.treatMissingData)
+      return this.validateTreatMissingData(this.treatMissingData);
     }
   }
 
-  validateTreatMissingData (treatment) {
-    let validTreamtments = ['missing', 'ignore', 'breaching', 'notBreaching']
+  validateTreatMissingData(treatment) {
+    const validTreamtments = ['missing', 'ignore', 'breaching', 'notBreaching'];
     if (validTreamtments.includes(treatment)) {
-      return treatment
+      return treatment;
     }
   }
 
-  resourceProperties (value) {
+  resourceProperties(value) {
     if (value instanceof Object) {
-      return value
+      return value;
     }
 
     return {
       value
-    }
+    };
   }
 
-  ressources () {
+  alarmDescription(properties) {
+    return properties.description ? properties.description : util.format(
+      'Alarm if %s is GreaterThanOrEqualToThreshold %s within %s minutes',
+      this.metricName, properties.value, properties.evaluationPeriods
+    );
+  }
+
+  resources() {
     return this.thresholds.map(
       (props, i) => {
-        const properties = this.resourceProperties(props)
+        const properties = this.resourceProperties(props);
 
         const config = {
           [this.formatAlarmName(properties.value)]: {
             Type: 'AWS::CloudWatch::Alarm',
             Properties: {
-              AlarmDescription: util.format('Alarm if queue contains more than %s messages', properties.value),
+              AlarmDescription: this.alarmDescription(properties),
               Namespace: properties.namespace || 'AWS/SQS',
-              MetricName: 'ApproximateNumberOfMessagesVisible',
+              MetricName: this.metricName,
               Dimensions: [
                 {
                   Name: 'QueueName',
@@ -78,49 +86,51 @@ class Alarm {
         }
 
         if (this.name) {
-          config[this.formatAlarmName(properties.value)].Properties.AlarmName = util.format('%s-%s-%d', this.name, this.queue, properties.value)
+          config[this.formatAlarmName(properties.value)].Properties.AlarmName = util.format(
+            '%s-%s-%d', this.name, this.queue, properties.value
+          );
         }
 
         if (this.treatMissingData) {
-          let treatMissing = this.resolveTreatMissingData(i)
+          const treatMissing = this.resolveTreatMissingData(i);
           if (treatMissing) {
-            config[this.formatAlarmName(properties.value)].Properties.TreatMissingData = treatMissing
+            config[this.formatAlarmName(properties.value)].Properties.TreatMissingData = treatMissing;
           }
         }
-        return config
+        return config;
       }
     )
   }
 }
 
 class Plugin {
-  constructor (serverless, options) {
-    this.serverless = serverless
+  constructor(serverless, options) {
+    this.serverless = serverless;
     this.hooks = {
       'package:compileEvents': this.beforeDeployResources.bind(this)
-    }
+    };
   }
 
-  beforeDeployResources () {
+  beforeDeployResources() {
     if (!this.serverless.service.custom || !this.serverless.service.custom['sqs-alarms']) {
-      return
+      return;
     }
 
     const alarms = this.serverless.service.custom['sqs-alarms'].map(
       data => new Alarm(data, this.serverless.getProvider('aws').getRegion())
-    )
+    );
 
     alarms.forEach(
-      alarm => alarm.ressources().forEach(
-        ressource => {
+      alarm => alarm.resources().forEach(
+        resource => {
           _.merge(
             this.serverless.service.provider.compiledCloudFormationTemplate.Resources,
-            ressource
-          )
+            resource
+          );
         }
       )
-    )
+    );
   }
 }
 
-module.exports = Plugin
+module.exports = Plugin;
